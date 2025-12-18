@@ -1,0 +1,63 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get tag name and commit SHA
+        id: get_tag
+        run: |
+          echo "tag_name=${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
+          echo "release_id=${{ github.event.release.id }}" >> $GITHUB_OUTPUT
+          echo "is_prerelease=${{ github.event.release.prerelease }}" >> $GITHUB_OUTPUT
+          # Get the commit SHA for the release tag
+          COMMIT_SHA=$(git rev-list -n1 ${{ github.event.release.tag_name }})
+          echo "commit_sha=$COMMIT_SHA" >> $GITHUB_OUTPUT
+          echo "Release commit SHA: $COMMIT_SHA"
+
+      - name: Download artifacts from build workflow
+        run: |
+          # Find the build run ID that matches the release commit
+          RUN_ID=$(gh run list --workflow=build.yml --commit=${{ steps.get_tag.outputs.commit_sha }} --status=success --limit=1 --json databaseId --jq '.[0].databaseId')
+
+          if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
+            echo "Error: No successful build found for commit ${{ steps.get_tag.outputs.commit_sha }}"
+            echo "Please ensure build.yml has run successfully on this commit before creating a release."
+            exit 1
+          fi
+
+          echo "Found build run ID: $RUN_ID"
+
+          # Download artifacts from that specific run
+          gh run download $RUN_ID --name=libtrustm-aarch64 --dir=./artifacts/
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release-assets
+          cd artifacts
+          tar -czf ../release-assets/libtrustm-aarch64-${{ steps.get_tag.outputs.tag_name }}.tar.gz .
+          cd ..
+          ls -la release-assets/
+
+      - name: Upload Release Asset
+        run: |
+          gh release upload ${{ steps.get_tag.outputs.tag_name }} \
+            ./release-assets/libtrustm-aarch64-${{ steps.get_tag.outputs.tag_name }}.tar.gz \
+            --clobber
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+

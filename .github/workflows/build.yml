@@ -1,0 +1,33 @@
+name: Build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-aarch64:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Build Docker image for aarch64
+        run: |
+          docker build -t libtrustm-aarch64 .
+
+      - name: Extract artifacts from Docker container
+        run: |
+          docker create --name temp-container libtrustm-aarch64
+          docker cp temp-container:/output ./output
+          docker rm temp-container
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: libtrustm-aarch64
+          path: output/
+
